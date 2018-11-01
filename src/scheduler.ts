@@ -51,13 +51,18 @@ let scheduler = new (class {
                 client.reject('method unknown: ' + client.methodName)
                 continue
             }
-            let returnValue = method.apply(this, client.methodArgs)
-            client.resolve(returnValue)
-            return Promise.resolve({
-                methodName: client.methodName,
-                methodArgs: client.methodArgs,
-                returnValue: returnValue
-            })
+            try {
+                let returnValue = method.apply(this, client.methodArgs)
+                client.resolve(returnValue)
+                return Promise.resolve({
+                    methodName: client.methodName,
+                    methodArgs: client.methodArgs,
+                    returnValue: returnValue
+                })
+            } catch (e) {
+                client.reject(e)
+                return Promise.reject(e)
+            }
         }
         return new Promise((resolve, reject) => {
             this.servers[serverId] = {

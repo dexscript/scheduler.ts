@@ -36,7 +36,7 @@ describe("scheduler call", () => {
     });
     it("call can choose method", async () => {
         let server = new Actor(async function () {
-            while(true) {
+            while (true) {
                 await scheduler.serve(this, {
                     addOne: (val: number) => val + 1,
                     subOne: (val: number) => val - 1
@@ -91,5 +91,26 @@ describe("scheduler call", () => {
         } catch (e) {
             expect(e).not.toBeNull()
         }
+    })
+    it("call should propagate exception", async () => {
+        let server = new Actor(async function () {
+            try {
+                await scheduler.sleep(this, 100)
+                await scheduler.serve(this, {
+                    addOne: (val: number) => {
+                        throw val + 1
+                    }
+                })
+            } catch (e) {
+            }
+        })
+        let client = new Actor(async function () {
+            try {
+                await scheduler.stub(this, server.id).addOne(1)
+            } catch (e) {
+                return e
+            }
+        })
+        expect(await client.result).toEqual(2)
     })
 });
