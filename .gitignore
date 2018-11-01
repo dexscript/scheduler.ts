@@ -1,3 +1,5 @@
 .*
 !/.gitignore
 dist/*.map
+node_modules
+coverage
