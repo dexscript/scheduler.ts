@@ -34,6 +34,11 @@ let scheduler = new (class {
         this.clients = {}
     }
 
+    reset() {
+        this.servers = {}
+        this.clients = {}
+    }
+
     serve(serverId: string, methods: { [key: string]: Function }): Promise<ServeResult> {
         let clients = this.clients[serverId]
         while (clients && clients.length > 0) {
@@ -61,7 +66,7 @@ let scheduler = new (class {
         })
     }
 
-    call(callerId: string, calleeId: string, methodName: string, ...methodArgs: any[]) {
+    call(callerId: string, calleeId: string, methodName: string, ...methodArgs: any[]): Promise<any> {
         let server = this.servers[calleeId]
         if (!server) {
             return new Promise((resolve, reject) => {
@@ -92,9 +97,15 @@ let scheduler = new (class {
         return new Promise(resolve => setTimeout(resolve, duration))
     }
 
-    reset() {
-        this.servers = {}
-        this.clients = {}
+    stub(callerId: string, calleeId: string): any {
+        let scheduler = this;
+        return new Proxy({}, {
+            get: function (target, methodName: string) {
+                return function (...methodArgs: any[]) {
+                    return scheduler.call(callerId, calleeId, methodName, ...methodArgs)
+                }
+            }
+        })
     }
 })()
 
