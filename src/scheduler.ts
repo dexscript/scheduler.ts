@@ -28,15 +28,18 @@ let scheduler = new (class {
 
     servers: { [serverId: string]: Server }
     clients: { [serverId: string]: Client[] }
+    waiters: { [taskId: string]: Task }
 
     constructor() {
         this.servers = {}
         this.clients = {}
+        this.waiters = {}
     }
 
     reset() {
         this.servers = {}
         this.clients = {}
+        this.waiters = {}
     }
 
     serve(serverId: string, methods: { [key: string]: Function }): Promise<ServeResult> {
@@ -69,6 +72,9 @@ let scheduler = new (class {
     call(callerId: string, calleeId: string, methodName: string, ...methodArgs: any[]): Promise<any> {
         let server = this.servers[calleeId]
         if (!server) {
+            if (Object.keys(this.waiters).length == 0) {
+                return Promise.reject('every actor is blocked')
+            }
             return new Promise((resolve, reject) => {
                 let clients = this.clients[calleeId] = this.clients[calleeId] || []
                 clients.push({
@@ -84,6 +90,7 @@ let scheduler = new (class {
         if (!method) {
             return Promise.reject('method unknown: ' + methodName)
         }
+        delete this.servers[calleeId]
         let returnValue = method.apply(this, methodArgs)
         server.resolve({
             methodName: methodName,
@@ -93,8 +100,18 @@ let scheduler = new (class {
         return Promise.resolve(returnValue)
     }
 
-    sleep(actor: Actor, duration: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, duration))
+    sleep(taskId: string, duration: number): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.waiters[taskId] = {
+                taskId: taskId,
+                resolve: resolve,
+                reject: reject
+            }
+            setTimeout(() => {
+                delete this.waiters[taskId]
+                resolve()
+            }, duration)
+        })
     }
 
     stub(callerId: string, calleeId: string): any {
