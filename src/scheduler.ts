@@ -1,6 +1,6 @@
 import {v4 as uuid} from 'uuid'
 
-interface Task {
+export interface Task {
     taskId: string
     resolve: Resolve
     reject: Reject
@@ -26,18 +26,21 @@ interface Client extends Task {
 
 let scheduler = new (class {
 
-    servers: { [serverId: string]: Server }
-    clients: { [serverId: string]: Client[] }
-    waiters: { [taskId: string]: Task }
+    private servers: { [serverId: string]: Server }
+    private asyncServers: { [serverId: string]: Server }
+    private clients: { [serverId: string]: Client[] }
+    private waiters: { [taskId: string]: Task }
 
     constructor() {
         this.servers = {}
+        this.asyncServers = {}
         this.clients = {}
         this.waiters = {}
     }
 
     reset() {
         this.servers = {}
+        this.asyncServers = {}
         this.clients = {}
         this.waiters = {}
     }
@@ -74,22 +77,81 @@ let scheduler = new (class {
         })
     }
 
+    asyncServe(serverId: string, methods: { [key: string]: Function }): Promise<void> {
+        let clients = this.clients[serverId]
+        while (clients && clients.length > 0) {
+            let client = clients.pop()
+            let method = methods[client.methodName]
+            if (!method) {
+                client.reject('method unknown: ' + client.methodName)
+                continue
+            }
+            method.call(this, client, ...client.methodArgs)
+            return Promise.resolve(null)
+        }
+        return new Promise((resolve, reject) => {
+            this.asyncServers[serverId] = {
+                taskId: serverId,
+                resolve: resolve,
+                reject: reject,
+                methods: methods,
+            }
+        })
+    }
+
     call(callerId: string, calleeId: string, methodName: string, ...methodArgs: any[]): Promise<any> {
+        let result = this.tryCallServer(calleeId, methodName, methodArgs)
+        if (result) {
+            return result
+        }
+        result = this.tryCallAsyncServer(calleeId, methodName, methodArgs)
+        if (result) {
+            return result
+        }
+        if (Object.keys(this.waiters).length == 0) {
+            return Promise.reject('every actor is blocked')
+        }
+        return new Promise((resolve, reject) => {
+            let clients = this.clients[calleeId] = this.clients[calleeId] || []
+            clients.push({
+                taskId: callerId,
+                resolve: resolve,
+                reject: reject,
+                methodName: methodName,
+                methodArgs: methodArgs,
+            })
+        })
+    }
+
+    private tryCallAsyncServer(calleeId: string, methodName: string, methodArgs: any[]): Promise<any> {
+        let server = this.asyncServers[calleeId]
+        if (!server) {
+            return null
+        }
+        let method = server.methods[methodName]
+        if (!method) {
+            return Promise.reject('method unknown: ' + methodName)
+        }
+        delete this.asyncServers[calleeId]
+        return new Promise<any>((resolve, reject) => {
+            let task: Task = {
+                taskId: calleeId,
+                resolve: resolve,
+                reject: reject
+            }
+            try {
+                method.call(this, task, ...methodArgs)
+            } catch (e) {
+                reject(e)
+            }
+            server.resolve(null)
+        })
+    }
+
+    private tryCallServer(calleeId: string, methodName: string, methodArgs: any[]): Promise<any> {
         let server = this.servers[calleeId]
         if (!server) {
-            if (Object.keys(this.waiters).length == 0) {
-                return Promise.reject('every actor is blocked')
-            }
-            return new Promise((resolve, reject) => {
-                let clients = this.clients[calleeId] = this.clients[calleeId] || []
-                clients.push({
-                    taskId: callerId,
-                    resolve: resolve,
-                    reject: reject,
-                    methodName: methodName,
-                    methodArgs: methodArgs,
-                })
-            })
+            return null
         }
         let method = server.methods[methodName]
         if (!method) {
@@ -135,9 +197,9 @@ export default scheduler
 
 export class Actor {
 
-    id: string
+    readonly id: string
 
-    result: Promise<any>
+    readonly result: Promise<any>
 
     constructor(f: Function, ...args: any[]) {
         this.id = uuid()

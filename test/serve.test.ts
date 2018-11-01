@@ -4,7 +4,7 @@ beforeEach(() => {
     scheduler.reset();
 });
 
-describe("scheduler call", () => {
+describe("serve", () => {
     it("serve before call", async () => {
         let server = new Actor(async function () {
             await scheduler.serve(this, {
