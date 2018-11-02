@@ -5,6 +5,53 @@ beforeEach(() => {
 });
 
 describe("channel", () => {
+    it("unbuffered channel", async () => {
+        interface Producer {
+            task: Task
+            element: any
+        }
+        let channel = new Actor(async function () {
+            let producers: Producer[] = []
+            let consumers: Task[] = []
+            while (true) {
+                await scheduler.asyncServe(this, {
+                    pop: (consumer: Task) => {
+                        if (producers.length > 0) {
+                            let producer = producers.pop()
+                            consumer.resolve(producer.element)
+                            producer.task.resolve(null)
+                            return
+                        }
+                        consumers.push(consumer)
+                    },
+                    push: (producer: Task, element: any) => {
+                        if (consumers.length > 0) {
+                            let consumer = consumers.pop()
+                            consumer.resolve(element)
+                            producer.resolve(null)
+                            return
+                        }
+                        producers.push({task: producer, element: element})
+                    }
+                })
+            }
+        })
+        let someProducer = new Actor(async function () {
+            let _channel = scheduler.stub(this, channel.id)
+            for (let i = 0; i < 5; i++) {
+                await _channel.push(i)
+                await scheduler.sleep(this, 100)
+            }
+        })
+        let someConsumer = new Actor(async function () {
+            let _channel = scheduler.stub(this, channel.id)
+            for (let i = 0; i < 5; i++) {
+                let element = await _channel.pop()
+                console.log(`${new Date().getMilliseconds()} ${element}`)
+            }
+        })
+        await someConsumer.result
+    })
     it("unbounded buffered channel", async () => {
         let channel = new Actor(async function () {
             let queue: any[] = []
