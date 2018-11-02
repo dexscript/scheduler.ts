@@ -29,20 +29,15 @@ let scheduler = new (class {
     private servers: { [serverId: string]: Server }
     private asyncServers: { [serverId: string]: Server }
     private clients: { [serverId: string]: Client[] }
-    private waiters: { [taskId: string]: Task }
 
     constructor() {
-        this.servers = {}
-        this.asyncServers = {}
-        this.clients = {}
-        this.waiters = {}
+        this.reset()
     }
 
     reset() {
         this.servers = {}
         this.asyncServers = {}
         this.clients = {}
-        this.waiters = {}
     }
 
     serve(serverId: string, methods: { [key: string]: Function }): Promise<ServeResult> {
@@ -108,9 +103,6 @@ let scheduler = new (class {
         if (result) {
             return result
         }
-        if (Object.keys(this.waiters).length == 0) {
-            return Promise.reject('every actor is blocked')
-        }
         return new Promise((resolve, reject) => {
             let clients = this.clients[calleeId] = this.clients[calleeId] || []
             clients.push({
@@ -169,13 +161,7 @@ let scheduler = new (class {
 
     sleep(taskId: string, duration: number): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.waiters[taskId] = {
-                taskId: taskId,
-                resolve: resolve,
-                reject: reject
-            }
             setTimeout(() => {
-                delete this.waiters[taskId]
                 resolve()
             }, duration)
         })

@@ -5,7 +5,7 @@ beforeEach(() => {
 });
 
 describe("contention", () => {
-    it("two transaction want to charge same wallet", async () => {
+    it("two transactions want to charge same wallet", async () => {
         let wallet = new Actor(async function () {
             let amount = 500 // dollar
             while (true) {
