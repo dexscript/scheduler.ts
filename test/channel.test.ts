@@ -99,7 +99,7 @@ describe("channel", () => {
             task: Task
             element: any
         }
-        let channelSize = 2 // queue length limited to 3
+        let channelSize = 2 // queue length limited to 2
         let channel = new Actor(async function () {
             let queue: any[] = []
             let producers: Producer[] = []
