@@ -93,4 +93,93 @@ describe("saga", () => {
         expect(await scheduler.stub('', wallet1.id).getAmount()).toEqual(200)
         expect(await scheduler.stub('', wallet2.id).getAmount()).toEqual(600)
     });
+    it("composable 2pc", async () => {
+        let wallet = async function (initAmount: number) {
+            let amount = initAmount // dollar
+            let stagingAmount = 0
+            while (true) {
+                await scheduler.serve(this, {
+                    stage: (val: number) => {
+                        if (val > 0) {
+                            stagingAmount += val
+                            return true
+                        }
+                        let newAmount = amount + val
+                        if (newAmount < 0) {
+                            return false
+                        }
+                        amount = newAmount
+                        stagingAmount -= val
+                        return true
+                    },
+                    commit: (val: number) => {
+                        if (val > 0) {
+                            stagingAmount -= val
+                            amount += val
+                            return
+                        }
+                        stagingAmount += val
+                    },
+                    abort: (val: number) => {
+                        if (val > 0) {
+                            stagingAmount -= val
+                            return
+                        }
+                        stagingAmount += val
+                        amount -= val
+                    },
+                    getAmount: () => {
+                        return amount
+                    }
+                })
+            }
+        }
+        let walletTx = async function (walletId: string, val: number) {
+            let wallet = scheduler.stub(this, walletId)
+            let result = await scheduler.serve(this, {
+                stage: () => {
+                    return wallet.stage(val)
+                }
+            })
+            if (!result.returnValue) {
+                return
+            }
+            return await scheduler.serve(this, {
+                commit: () => {
+                    return wallet.commit(val)
+                },
+                abort: () => {
+                    return wallet.abort(val)
+                }
+            })
+        }
+        let saga = async function (...txIds: string[]) {
+            let transactions: any[] = []
+            for (let txId of txIds) {
+                transactions.push(scheduler.stub(this, txId))
+            }
+            let staged: any[] = []
+            for (let tx of transactions) {
+                if (!await tx.stage()) {
+                    for(let abortTx of staged) {
+                        await abortTx.abort()
+                    }
+                    return false
+                }
+                staged.push(tx)
+            }
+            for (let tx of staged) {
+                await tx.commit()
+            }
+            return true
+        }
+        let wallet1 = new Actor(wallet, 500)
+        let wallet2 = new Actor(wallet, 300)
+        let wallet1TransferOut = new Actor(walletTx, wallet1.id, -300)
+        let wallet2TransferIn = new Actor(walletTx, wallet2.id, 300)
+        let transfer = new Actor(saga, wallet1TransferOut.id, wallet2TransferIn.id)
+        expect(await transfer.result).toEqual(true)
+        expect(await scheduler.stub('', wallet1.id).getAmount()).toEqual(200)
+        expect(await scheduler.stub('', wallet2.id).getAmount()).toEqual(600)
+    })
 })
