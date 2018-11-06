@@ -167,16 +167,16 @@ let scheduler = new (class {
         })
     }
 
-    stub(callerId: string, calleeId: string): any {
-        let scheduler = this;
-        return new Proxy({}, {
-            get: function (target, methodName: string) {
-                return function (...methodArgs: any[]) {
-                    return scheduler.call(callerId, calleeId, methodName, ...methodArgs)
-                }
+stub(callerId: string, calleeId: string): any {
+    let scheduler = this;
+    return new Proxy({}, {
+        get: function (target, methodName: string) {
+            return function (...methodArgs: any[]) {
+                return scheduler.call(callerId, calleeId, methodName, ...methodArgs)
             }
-        })
-    }
+        }
+    })
+}
 })()
 
 export default scheduler

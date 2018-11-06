@@ -31,6 +31,46 @@ describe("saga", () => {
         expect(await transaction1.result).toEqual(true)
         expect(await transaction2.result).toEqual(false)
     });
+    it("1pc - idempotence", async () => {
+        let wallet = new Actor(async function () {
+            let amount = 500 // dollar
+            let historicalActions = []
+            while (true) {
+                await scheduler.serve(this, {
+                    charge: (txId: string, val: number) => {
+                        for (let action of historicalActions) {
+                            if (action.txId === txId) {
+                                return true // idempotent
+                            }
+                        }
+                        let newAmount = amount - val
+                        if (newAmount < 0) {
+                            return false
+                        }
+                        historicalActions.push(
+                            {txId: txId, val: val})
+                        amount = newAmount
+                        return true
+                    }
+                })
+            }
+        })
+        let transaction1 = new Actor(async function () {
+            let actorId = this;
+            // charge twice
+            await scheduler.stub(actorId, wallet.id).charge(actorId, 300)
+            let _wallet = scheduler.stub(actorId, wallet.id)
+            return await _wallet.charge(actorId, 300)
+        })
+        let transaction2 = new Actor(async function () {
+            let actorId = this;
+            await scheduler.sleep(actorId, 100)
+            let _wallet = scheduler.stub(actorId, wallet.id)
+            return await _wallet.charge(actorId, 300)
+        })
+        expect(await transaction1.result).toEqual(true)
+        expect(await transaction2.result).toEqual(false)
+    });
     it("2pc - two phase commit", async () => {
         let wallet = async function (initAmount: number) {
             let amount = initAmount // dollar
@@ -74,7 +114,9 @@ describe("saga", () => {
         }
         let wallet1 = new Actor(wallet, 500)
         let wallet2 = new Actor(wallet, 300)
-        let transfer = async function (fromWalletId: string, toWalletId: string, val: number) {
+        let transfer = async function (
+            fromWalletId: string, toWalletId: string, val: number) {
+
             let fromWallet = scheduler.stub(this, fromWalletId)
             let toWallet = scheduler.stub(this, toWalletId)
             if (!await fromWallet.stage(-val)) {
@@ -161,7 +203,7 @@ describe("saga", () => {
             let staged: any[] = []
             for (let tx of transactions) {
                 if (!await tx.stage()) {
-                    for(let abortTx of staged) {
+                    for (let abortTx of staged) {
                         await abortTx.abort()
                     }
                     return false
@@ -226,7 +268,7 @@ describe("saga", () => {
         let coupon = async function () {
             let used = false
             let staged = false
-            while(true) {
+            while (true) {
                 await scheduler.serve(this, {
                     stage: () => {
                         if (used || staged) {
@@ -277,7 +319,7 @@ describe("saga", () => {
             let staged: any[] = []
             for (let tx of transactions) {
                 if (!await tx.stage()) {
-                    for(let abortTx of staged) {
+                    for (let abortTx of staged) {
                         await abortTx.abort()
                     }
                     return false
